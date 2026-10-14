@@ -1,0 +1,10 @@
+# Virtual Environment
+venv/
+__pycache__/
+
+# Environment variables & API keys (Never push this!)
+.env
+
+# Temporary files
+temp_email.eml
+*.pyc
