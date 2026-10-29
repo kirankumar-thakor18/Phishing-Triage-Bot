@@ -8,3 +8,9 @@ __pycache__/
 # Temporary files
 temp_email.eml
 *.pyc
+
+# Scan history database
+scans.db
+
+# Test / tooling caches
+.pytest_cache/

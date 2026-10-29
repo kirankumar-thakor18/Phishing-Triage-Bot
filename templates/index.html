@@ -15,6 +15,9 @@
                         <h3>🛡️ Phishing Triage & Threat Intel Dashboard</h3>
                     </div>
                     <div class="card-body">
+                        {% if error %}
+                            <div class="alert alert-danger">{{ error }}</div>
+                        {% endif %}
                         <form action="/analyze" method="POST" enctype="multipart/form-data">
                             <div class="mb-3">
                                 <label for="email_file" class="form-label">Upload Suspicious Email (.eml)</label>
@@ -22,6 +25,8 @@
                             </div>
                             <button type="submit" class="btn btn-primary w-100">Analyze Email & Check Threat Intel</button>
                         </form>
+                        <hr>
+                        <a href="{{ url_for('history') }}" class="btn btn-outline-dark w-100">📜 View Scan History</a>
                     </div>
                 </div>
             </div>

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analysis Result - Phishing Triage Bot</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    {% macro auth_badge(value) -%}
+        {%- if value == 'pass' -%}{% set cls = 'success' %}
+        {%- elif value in ['fail', 'permerror'] -%}{% set cls = 'danger' %}
+        {%- elif value in ['softfail', 'temperror', 'neutral'] -%}{% set cls = 'warning' %}
+        {%- else -%}{% set cls = 'secondary' %}{%- endif -%}
+        <span class="badge bg-{{ cls }}">{{ value | upper }}</span>
+    {%- endmacro %}
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-10">
+
+                <!-- Verdict Banner -->
+                <div class="alert alert-{{ risk.badge }}">
+                    <h4 class="alert-heading mb-1">
+                        Verdict: {{ risk.verdict }}
+                        <span class="badge bg-{{ risk.badge }}">{{ risk.score }}/100</span>
+                    </h4>
+                    <p class="mb-0">Risk score combined from URLs, sender IP, attachments and email authentication.</p>
+                </div>
+
+                <!-- Risk Findings -->
+                <div class="card shadow mb-3">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">🧮 Risk Findings</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <ul class="list-group list-group-flush">
+                            {% for f in risk.findings %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <span>
+                                        {% if f.severity == 'high' %}<span class="badge bg-danger me-2">HIGH</span>
+                                        {% elif f.severity == 'medium' %}<span class="badge bg-warning text-dark me-2">MED</span>
+                                        {% elif f.severity == 'low' %}<span class="badge bg-info text-dark me-2">LOW</span>
+                                        {% else %}<span class="badge bg-secondary me-2">INFO</span>{% endif %}
+                                        {{ f.text }}
+                                    </span>
+                                    {% if f.points %}<span class="badge bg-dark">+{{ f.points }}</span>{% endif %}
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Email Details -->
+                <div class="card shadow mb-3">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">📧 Email Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm mb-0">
+                            <tr><th style="width: 120px;">Subject</th><td>{{ subject or '(none)' }}</td></tr>
+                            <tr><th>From</th><td>{{ sender or '(none)' }}</td></tr>
+                            <tr><th>Date</th><td>{{ date or '(none)' }}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Email Authentication -->
+                <div class="card shadow mb-3">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">🔐 Email Authentication (SPF / DKIM / DMARC)</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap gap-4 mb-3">
+                            <div>
+                                <div class="text-muted small">SPF</div>
+                                {{ auth_badge(auth_results.spf) }}
+                            </div>
+                            <div>
+                                <div class="text-muted small">DKIM</div>
+                                {{ auth_badge(auth_results.dkim) }}
+                            </div>
+                            <div>
+                                <div class="text-muted small">DMARC</div>
+                                {{ auth_badge(auth_results.dmarc) }}
+                            </div>
+                        </div>
+                        <p class="mb-1">
+                            <small class="text-muted">DKIM-Signature header present: {{ auth_results.dkim_signature_present }}</small>
+                        </p>
+                        <pre class="small bg-light p-2 rounded mb-0" style="white-space: pre-wrap; word-break: break-all;">{{ auth_results.raw }}</pre>
+                    </div>
+                </div>
+
+                <!-- URLs Found -->
+                <div class="card shadow mb-3">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">🔗 URLs Found ({{ urls | length }})</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if urls %}
+                            <ul class="list-group list-group-flush">
+                                {% for u in urls %}
+                                    <li class="list-group-item text-break">{{ u }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p class="text-muted mb-0">No URLs found in this email.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Sender IP Reputation -->
+                <div class="card shadow mb-3">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">🌐 Sender IP Reputation (AbuseIPDB)</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if ip_results %}
+                            <div class="table-responsive">
+                                <table class="table table-bordered align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>IP Address</th>
+                                            <th class="text-center">Abuse Score</th>
+                                            <th class="text-center">Reports</th>
+                                            <th>Country</th>
+                                            <th>ISP</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for r in ip_results %}
+                                            <tr
+                                                {% if r.abuse_confidence is defined and r.abuse_confidence >= 75 %}class="table-danger"
+                                                {% elif r.abuse_confidence is defined and r.abuse_confidence >= 25 %}class="table-warning"{% endif %}>
+                                                <td>{{ r.ip }}</td>
+                                                <td class="text-center">{{ r.abuse_confidence if r.abuse_confidence is defined else '-' }}</td>
+                                                <td class="text-center">{{ r.total_reports if r.total_reports is defined else '-' }}</td>
+                                                <td>{{ r.country if r.country is defined else '-' }}</td>
+                                                <td>{{ r.isp if r.isp is defined else '-' }}</td>
+                                                <td>{{ r.status }}</td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p class="text-muted mb-0">No public sender IP found in Received headers.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Attachments -->
+                <div class="card shadow mb-3">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">📎 Attachments ({{ attachment_results | length }})</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if attachment_results %}
+                            <div class="table-responsive">
+                                <table class="table table-bordered align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Filename</th>
+                                            <th>SHA256</th>
+                                            <th class="text-center">Malicious</th>
+                                            <th class="text-center">Suspicious</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for a in attachment_results %}
+                                            {% set vt = a.vt %}
+                                            <tr
+                                                {% if vt and vt.malicious is defined and vt.malicious > 0 %}class="table-danger"
+                                                {% elif vt and vt.suspicious is defined and vt.suspicious > 0 %}class="table-warning"{% endif %}>
+                                                <td>{{ a.filename }}</td>
+                                                <td><code class="small">{{ a.sha256 or '-' }}</code></td>
+                                                <td class="text-center">{{ vt.malicious if vt and vt.malicious is defined else '-' }}</td>
+                                                <td class="text-center">{{ vt.suspicious if vt and vt.suspicious is defined else '-' }}</td>
+                                                <td>{{ vt.status if vt else 'Could not hash file' }}</td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p class="text-muted mb-0">No attachments in this email.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Threat Intelligence -->
+                <div class="card shadow mb-4">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">🛡️ Threat Intelligence (VirusTotal)</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if vt_results %}
+                            <div class="table-responsive">
+                                <table class="table table-bordered align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>URL</th>
+                                            <th class="text-center">Malicious</th>
+                                            <th class="text-center">Suspicious</th>
+                                            <th class="text-center">Harmless</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for r in vt_results %}
+                                            <tr
+                                                {% if r.malicious is defined and r.malicious > 0 %}class="table-danger"
+                                                {% elif r.suspicious is defined and r.suspicious > 0 %}class="table-warning"{% endif %}>
+                                                <td class="text-break">{{ r.url }}</td>
+                                                <td class="text-center">{{ r.malicious if r.malicious is defined else '-' }}</td>
+                                                <td class="text-center">{{ r.suspicious if r.suspicious is defined else '-' }}</td>
+                                                <td class="text-center">{{ r.harmless if r.harmless is defined else '-' }}</td>
+                                                <td>{{ r.status }}</td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p class="text-muted mb-0">No URLs were checked.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 mb-5">
+                    <a href="{{ url_for('index') }}" class="btn btn-secondary">← Analyze Another Email</a>
+                    <a href="{{ url_for('download_json', scan_id=scan_id) }}" class="btn btn-primary">⬇ Download JSON Report</a>
+                    <a href="{{ url_for('download_csv', scan_id=scan_id) }}" class="btn btn-outline-primary">⬇ Download CSV</a>
+                    <a href="{{ url_for('history') }}" class="btn btn-outline-dark">📜 Scan History</a>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</body>
+</html>
