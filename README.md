@@ -61,6 +61,10 @@ phishing-triage-bot/
 │   └── test_app.py        # pytest unit + integration tests
 ├── requirements.txt       # Runtime dependencies
 ├── requirements-dev.txt   # Dev dependencies (pytest)
+├── Dockerfile             # Container image (waitress, non-root user)
+├── docker-compose.yml     # Compose stack (app + persistent data volume)
+├── DOCKER_SETUP.md        # Docker setup guide (Windows)
+├── .dockerignore          # Files excluded from the build context
 ├── .env.example           # Sample environment variables
 └── README.md
 ```
