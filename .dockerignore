@@ -1,0 +1,21 @@
+# Virtual environment (never copy into image)
+venv/
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Git and local config
+.git/
+.gitignore
+
+# Secrets - never bake API keys into the image
+.env
+.env.*
+
+# Local runtime data
+scans.db
+
+# Tests and local tooling not needed at runtime
+tests/

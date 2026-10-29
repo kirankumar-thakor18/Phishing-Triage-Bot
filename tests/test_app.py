@@ -41,8 +41,9 @@ def build_eml(subject="Test Email", body="Hello world", extra_headers="", attach
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module, "DB_PATH", str(tmp_path / "test_scans.db"))
+    monkeypatch.setattr(app_module, "_rate_buckets", {})
     app_module.init_db()
-    app_module.app.config.update(TESTING=True)
+    app_module.app.config.update(TESTING=True, RATE_LIMIT_ENABLED=False)
     with app_module.app.test_client() as test_client:
         yield test_client
 
@@ -198,3 +199,26 @@ def test_json_and_csv_download(client, mock_intel):
 def test_missing_report_returns_404(client):
     assert client.get("/report/99999/json").status_code == 404
     assert client.get("/report/99999/csv").status_code == 404
+
+
+def test_rate_limit_blocks_after_limit(client, mock_intel, monkeypatch):
+    monkeypatch.setitem(app_module.app.config, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setitem(app_module.app.config, "RATE_LIMIT_MAX", 2)
+    monkeypatch.setattr(app_module, "_rate_buckets", {})
+
+    eml = build_eml(subject="Rate Limit Test")
+    for _ in range(2):
+        resp = client.post(
+            "/analyze",
+            data={"email_file": (io.BytesIO(eml), "a.eml")},
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 200
+
+    blocked = client.post(
+        "/analyze",
+        data={"email_file": (io.BytesIO(eml), "a.eml")},
+        content_type="multipart/form-data",
+    )
+    assert blocked.status_code == 429
+    assert b"Too many requests" in blocked.data

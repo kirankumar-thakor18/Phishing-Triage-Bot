@@ -1,0 +1,15 @@
+services:
+  phishing-bot:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      - SCANS_DB=/app/data/scans.db
+    volumes:
+      - phishing_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  phishing_data:

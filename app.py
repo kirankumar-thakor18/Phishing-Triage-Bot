@@ -3,11 +3,13 @@ import re
 import io
 import csv
 import json
+import time
 import base64
 import hashlib
 import sqlite3
 import ipaddress
 import tempfile
+import threading
 from datetime import datetime, timezone
 import requests
 from flask import Flask, render_template, request, redirect, url_for
@@ -24,14 +26,48 @@ app = Flask(__name__)
 # Upload size limit (5 MB) - bada file server ko hang/DoS kar sakta hai
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 
+# Basic per-IP rate limit (demo safety): public URL pe API quota abuse rokta hai.
+app.config["RATE_LIMIT_ENABLED"] = True
+app.config["RATE_LIMIT_MAX"] = 5          # max requests
+app.config["RATE_LIMIT_WINDOW"] = 60      # per 60 seconds
+
 # API quota safety: ek email mein bahut saare IOC ho sakte hain, par hum
 # limited check karte hain taaki free-tier API quota khatam na ho.
 MAX_URLS_TO_SCAN = 10
 MAX_IPS_TO_SCAN = 3
 MAX_ATTACHMENTS_TO_SCAN = 5
 
-# Scan history SQLite database file (project folder ke andar)
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scans.db")
+# Reverse proxy ke peeche sahi client IP lene ke liye (Render/Railway etc.)
+if os.getenv("TRUST_PROXY", "").lower() in ("1", "true", "yes"):
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+# Scan history SQLite database file (Docker mein volume ke liye override ho sakta hai)
+DB_PATH = os.getenv(
+    "SCANS_DB",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "scans.db"),
+)
+
+# In-memory rate limit buckets: {ip: [request_timestamps]}
+_rate_lock = threading.Lock()
+_rate_buckets = {}
+
+
+def is_rate_limited(client_ip):
+    """Simple sliding-window rate limiter. True = request block karo."""
+    now = time.time()
+    window = app.config["RATE_LIMIT_WINDOW"]
+    limit = app.config["RATE_LIMIT_MAX"]
+
+    with _rate_lock:
+        recent = [t for t in _rate_buckets.get(client_ip, []) if now - t < window]
+        if len(recent) >= limit:
+            _rate_buckets[client_ip] = recent
+            return True
+        recent.append(now)
+        _rate_buckets[client_ip] = recent
+    return False
 
 
 def get_db():
@@ -408,6 +444,15 @@ def index():
 
 @app.route('/analyze', methods=['POST'])
 def analyze_email():
+    # Per-IP rate limit (demo abuse protection)
+    if app.config.get("RATE_LIMIT_ENABLED", True):
+        client_ip = request.remote_addr or "unknown"
+        if is_rate_limited(client_ip):
+            return render_template(
+                'index.html',
+                error="Too many requests. Please wait a minute and try again.",
+            ), 429
+
     if 'email_file' not in request.files:
         return redirect(request.url)
     
@@ -566,4 +611,15 @@ def download_csv(scan_id):
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Production ke liye waitress (Windows-compatible WSGI server).
+    # Local dev ke liye bhi same command: python app.py
+    port = int(os.getenv("PORT", "5000"))
+    try:
+        from waitress import serve
+
+        print(f"Serving on http://0.0.0.0:{port}")
+        serve(app, host="0.0.0.0", port=port)
+    except ImportError:
+        # waitress install nahi hai to Flask dev server (debug OFF)
+        print("waitress not installed, falling back to Flask server (debug off)")
+        app.run(host="0.0.0.0", port=port, debug=False)

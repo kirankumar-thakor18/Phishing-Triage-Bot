@@ -20,6 +20,8 @@ intelligence, check email authentication, and produce a risk verdict with a down
 - **Scan history** — stores every scan in SQLite.
 - **Report export** — download reports as JSON or CSV.
 - **Basic safety limits** — max upload size, `.eml`-only uploads, limited IOC scans per email.
+- **Rate limiting** — per-IP request limit to protect API quota on public demos.
+- **Production server** — runs with waitress (not the Flask dev server).
 
 ---
 
@@ -131,7 +133,33 @@ Get free keys from:
 python app.py
 ```
 
+This starts a **waitress** WSGI server (production-style, debug off) on port 5000.
+Set a different port with the `PORT` environment variable.
+
 Open http://127.0.0.1:5000
+
+---
+
+## Docker (recommended for demo deployment)
+
+Build and run with Docker:
+
+```powershell
+docker build -t phishing-bot .
+docker run -p 5000:5000 --env-file .env -e SCANS_DB=/app/data/scans.db -v phishing_data:/app/data phishing-bot
+```
+
+Or with Docker Compose (reads `.env`, persists history in a named volume):
+
+```powershell
+docker compose up --build
+```
+
+Notes:
+- API keys are **not** baked into the image. They are passed at runtime with `--env-file .env`.
+- `SCANS_DB` points to `/app/data/scans.db`; the `phishing_data` volume keeps history across restarts.
+- If you put the app behind a reverse proxy (Render/Railway/Fly), set `TRUST_PROXY=1` so the real client IP is used for rate limiting.
+- The container runs as a non-root user and uses waitress instead of the Flask dev server.
 
 ---
 
@@ -168,11 +196,16 @@ Tests mock the external APIs, so no API calls or keys are needed to run them.
 
 ## Safety and limitations
 
-- External API calls are subject to free-tier rate limits; the app scans a limited number of IOCs per email.
+> ⚠️ **Demo tool.** Do not upload real sensitive emails to a public deployment. Analysis results are stored in the scan-history database.
+
+- This is a **portfolio/demo** project, not a hardened multi-user product. There is **no user authentication**.
+- External API calls are subject to free-tier limits; the app scans a limited number of IOCs per email and applies a per-IP rate limit.
+- Using free-tier VirusTotal/AbuseIPDB keys for a public multi-user service may violate their Terms of Service.
 - SPF/DKIM/DMARC are **not** verified cryptographically by this app — it trusts the receiving mail server's `Authentication-Results` header.
 - `Received` headers can be forged; IP reputation is one signal, not proof.
 - The score is a heuristic aid for triage, not a replacement for analyst judgment.
 - A "Safe" verdict means no known indicators were found, not that the email is guaranteed benign.
+- SQLite is fine for a demo; a real multi-user deployment should use Postgres and a persistent volume.
 
 ---
 
@@ -182,5 +215,7 @@ Tests mock the external APIs, so no API calls or keys are needed to run them.
 - mail-parser
 - VirusTotal API v3, AbuseIPDB API v2
 - SQLite
+- waitress (WSGI server)
+- Docker / Docker Compose
 - Bootstrap 5
 - pytest
